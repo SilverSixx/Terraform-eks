@@ -1,20 +1,27 @@
-.terraform/
-.terraform.lock.hcl
+**/.terraform/
+**/.terraform.lock.hcl
 
-terrafrom.tfstate
-terraform.tfstate.backup
+**/terraform.tfstate
+**/terraform.tfstate.backup
 
-*.tfvars
-*.tfvars.json
+**/*.tfvars
+**/*.tfvars.json
 
-crash.log
+**/*.tfplan
+**/*.out
 
-*.tfplan
+**/crash.log
 
+# Override files (local-only)
+**/override.tf
+**/override.tf.json
+
+# Editor/IDE files
 .vscode/
 .idea/
 *.swp
 *.bak
 
+# OS metadata
 .DS_Store
 Thumbs.db
