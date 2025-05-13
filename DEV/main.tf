@@ -4,7 +4,7 @@ provider "aws" {
 }
 
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.6"
 
   required_providers {
     aws = {
@@ -17,7 +17,7 @@ terraform {
     bucket         = "tf-states"
     key            = "eks/dev/terraform.tfstate"
     region         = "ap-southeast-1"
-    dynamodb_table = "terraform-locks"
+    use_lock_table = true
     encrypt        = true
   }
 }
