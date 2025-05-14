@@ -13,31 +13,47 @@ locals {
   vpc_cidr = var.vpc_cidr
 
   # Generate subnet CIDRs for each AZ
-  zone1_cidr = cidrsubnet(local.vpc_cidr, 4, 1)
-  zone2_cidr = cidrsubnet(local.vpc_cidr, 4, 2)
-  zone3_cidr = cidrsubnet(local.vpc_cidr, 4, 3)
+  zone1_cidr = cidrsubnet(local.vpc_cidr, 4, 5)
+  zone2_cidr = cidrsubnet(local.vpc_cidr, 4, 6)
+  zone3_cidr = cidrsubnet(local.vpc_cidr, 4, 7)
+  public_zone_cidr = cidrsubnet(local.vpc_cidr, 4, 8)
 }
 
+resource "aws_subnet" "public_subnet" {
+  vpc_id                  = var.vpc_id
+  cidr_block              = local.public_zone_cidr
+  availability_zone       = var.zone1
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.cluster_name}-public-${var.zone1}"
+    "kubernetes.io/role/elb"  = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
+  }
+}
 
 resource "aws_subnet" "private_zone1" {
   vpc_id                  = var.vpc_id
   cidr_block              = local.zone1_cidr
   availability_zone       = var.zone1
-  map_public_ip_on_launch = false
 
   tags = {
-    Name = "${var.env}-private-${var.zone1}"
+    Name = "${var.cluster_name}-private-${var.zone1}"
+    "kubernetes.io/role/internal-elb"                      = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
+
 }
 
 resource "aws_subnet" "private_zone2" {
   vpc_id                  = var.vpc_id
   cidr_block              = local.zone2_cidr
   availability_zone       = var.zone2
-  map_public_ip_on_launch = false
-
+  
   tags = {
-    Name = "${var.env}-private-${var.zone3}"
+    Name = "${var.cluster_name}-private-${var.zone2}"
+    "kubernetes.io/role/internal-elb"                      = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 }
 
@@ -45,14 +61,86 @@ resource "aws_subnet" "private_zone3" {
   vpc_id                  = var.vpc_id
   cidr_block              = local.zone3_cidr
   availability_zone       = var.zone3
-  map_public_ip_on_launch = false
 
   tags = {
-    Name = "${var.env}-private-${var.zone3}"
+    Name = "${var.cluster_name}-private-${var.zone3}"
+    "kubernetes.io/role/internal-elb"                      = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "owned"
   }
 }
 
-# Create IAM role for EKS cluster
+data "aws_internet_gateway" "igw" {
+  filter {
+    name = "attachment.vpc-id"
+    values  = [var.vpc_id]
+  }
+}
+
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = {
+    Name = "${var.cluster_name}-nat"
+  }
+}
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public_subnet.id
+
+  tags = {
+    Name = "${var.cluster_name}-nat"
+  }
+
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = var.vpc_id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = data.aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name = "${var.cluster_name}-public"
+  }
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = var.vpc_id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
+  }
+
+  tags = {
+    Name = "${var.cluster_name}-private"
+  }
+}
+
+
+resource "aws_route_table_association" "private_zone1" {
+  subnet_id      = aws_subnet.private_zone1.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_zone2" {
+  subnet_id      = aws_subnet.private_zone2.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_zone3" {
+  subnet_id      = aws_subnet.private_zone3.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "public_zone" {
+  subnet_id      = aws_subnet.public_subnet.id
+  route_table_id = aws_route_table.public.id
+}
+
 # This role allows the EKS cluster to interact with AWS services
 resource "aws_iam_role" "eks" {
   name = "${var.cluster_name}-eks-cluster"
@@ -74,7 +162,7 @@ resource "aws_iam_role_policy_attachment" "eks" {
 }
 
 resource "aws_eks_cluster" "eks" {
-  name     = "${var.env}-${var.cluster_name}"
+  name     = "${var.cluster_name}"
   version  = var.eks_version
   role_arn = aws_iam_role.eks.arn
 
@@ -99,7 +187,7 @@ resource "aws_eks_cluster" "eks" {
 # Create IAM role for EKS nodes
 # This role allows the EKS nodes to interact with AWS services
 resource "aws_iam_role" "nodes" {
-  name = "${var.env}-${var.cluster_name}-eks-nodes"
+  name = "${var.cluster_name}-eks-nodes"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -134,16 +222,16 @@ resource "aws_eks_node_group" "general" {
   node_role_arn   = aws_iam_role.nodes.arn
 
   subnet_ids = [
-    data.aws_subnet.private_zone1.id,
-    data.aws_subnet.private_zone2.id,
-    data.aws_subnet.private_zone3.id
+    aws_subnet.private_zone1.id,
+    aws_subnet.private_zone2.id,
+    aws_subnet.private_zone3.id
   ]
 
   capacity_type  = "ON_DEMAND"
   instance_types = [var.instance_type]
 
   scaling_config {
-    desired_size = var.cluster_name == "dev" ? 1 : 3
+    desired_size = var.cluster_name == "DEV" ? 1 : 3
     min_size     = 0
     max_size     = 10
   }

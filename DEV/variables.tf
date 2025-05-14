@@ -1,4 +1,3 @@
-variable "env" {}
 variable "cluster_name" {}
 variable "eks_version" {}
 variable "instance_type" {}
@@ -7,3 +6,4 @@ variable "zone1" {}
 variable "zone2" {}
 variable "zone3" {}
 variable "vpc_cidr" {}
+variable "region" {}

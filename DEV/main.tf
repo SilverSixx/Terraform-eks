@@ -13,19 +13,17 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket         = "tf-states"
-    key            = "eks/dev/terraform.tfstate"
-    region         = "ap-southeast-1"
-    use_lock_table = true
-    encrypt        = true
-  }
+  #backend "s3" {
+  # bucket         = "tf-states"
+  # key            = "eks/dev/terraform.tfstate"
+  # region         = "ap-southeast-1"
+  # encrypt        = true
+  #}
 }
 
 module "eks" {
   source = "../modules/eks"
 
-  env           = var.env
   cluster_name  = var.cluster_name
   eks_version   = var.eks_version
   instance_type = var.instance_type
@@ -34,4 +32,5 @@ module "eks" {
   zone1         = var.zone1
   zone2         = var.zone2
   zone3         = var.zone3
+  region        = var.region
 }
